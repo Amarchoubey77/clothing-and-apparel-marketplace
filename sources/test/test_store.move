@@ -11,10 +11,7 @@ module clothing_marketplace::test_store {
     use std::collections::HashMap;
     use std::option::{Self, Option};
 
-    use clothing_marketplace::store::{Self, Apparel, ApparelPublisher};
-    use clothing_marketplace::floor_price::{Self};
-    use clothing_marketplace::royalty_rule::{Self};
-    use clothing_marketplace::helpers::{init_test_helper};
+    use clothing_marketplace::clothing_marketplace::{Self, Apparel, ApparelPublisher, new_order, Order, new_shopping_cart, ShoppingCart, new_customer_account, CustomerAccount, add_item_to_cart, remove_item_from_cart, checkout, update_order_status};
 
     const TEST_ADDRESS1: address = @0xB;
     const TEST_ADDRESS2: address = @0xC;
@@ -26,7 +23,7 @@ module clothing_marketplace::test_store {
         // Create a kiosk for the marketplace
         next_tx(scenario, TEST_ADDRESS1);
         {
-            let cap = store::new(ts::ctx(scenario));
+            let cap = clothing_marketplace::new(ts::ctx(scenario));
             transfer::public_transfer(cap, TEST_ADDRESS1);
         };
 
@@ -34,23 +31,9 @@ module clothing_marketplace::test_store {
         next_tx(scenario, TEST_ADDRESS1);
         {
             let publisher = ts::take_shared<ApparelPublisher>(scenario);
-            store::new_policy(&publisher, ts::ctx(scenario));
+            clothing_marketplace::new_policy(&publisher, ts::ctx(scenario));
 
             ts::return_shared(publisher);
-        };
-        
-        // Add a royalty rule
-        next_tx(scenario, TEST_ADDRESS1);
-        {
-            let policy = ts::take_shared<TransferPolicy<Apparel>>(scenario);
-            let cap = ts::take_from_sender<TransferPolicyCap<Apparel>>(scenario);
-            let amount_bp: u16 = 100;
-            let min_amount: u64 = 0;
-
-            royalty_rule::add(&mut policy, &cap, amount_bp, min_amount);
-           
-            ts::return_to_sender(scenario, cap);
-            ts::return_shared(policy);
         };
 
         // Create an apparel item
@@ -63,13 +46,13 @@ module clothing_marketplace::test_store {
             let stock: u64 = 100;
             let size = String::from("M");
 
-            let apparel_store = store::new_apparel(name, description, price, stock, size, color, ts::ctx(scenario));
- 
+            let apparel_store = clothing_marketplace::new_apparel(name, description, price, stock, size, color, ts::ctx(scenario));
+
             transfer::public_transfer(apparel_store, TEST_ADDRESS1);
         };
 
         let nft_data = next_tx(scenario, TEST_ADDRESS1);
-        
+
         // Place the apparel item to the kiosk
         next_tx(scenario, TEST_ADDRESS1);
         {
@@ -79,7 +62,7 @@ module clothing_marketplace::test_store {
             // Get item ID from effects
             let id_ = ts::created(&nft_data);
             let item_id = id_[0];
-        
+
             kiosk::place(&mut kiosk, &kiosk_cap, apparel);
 
             assert_eq(kiosk::item_count(&kiosk), 1);
@@ -101,7 +84,7 @@ module clothing_marketplace::test_store {
             // Get item ID from effects
             let id_ = ts::created(&nft_data);
             let item_id = id_[0];
-        
+
             kiosk::list<Apparel>(&mut kiosk, &kiosk_cap, item_id, price);
 
             assert_eq(kiosk::item_count(&kiosk), 1);
@@ -120,14 +103,12 @@ module clothing_marketplace::test_store {
             let kiosk =  ts::take_shared<Kiosk>(scenario);
             let policy = ts::take_shared<TransferPolicy<Apparel>>(scenario);
             let price  = mint_for_testing(2000, ts::ctx(scenario));
-            let royalty_price  = mint_for_testing(20, ts::ctx(scenario));
             // Get item ID from effects
             let id_ = ts::created(&nft_data);
             let item_id = id_[0];
-        
+
             let (item, request) = kiosk::purchase<Apparel>(&mut kiosk, item_id, price);
 
-            royalty_rule::pay(&mut policy, &mut request, royalty_price);
             // Confirm the request. Destroy the hot potato
             let (item_id, paid, from ) = tp::confirm_request(&policy, request);
 
@@ -135,28 +116,12 @@ module clothing_marketplace::test_store {
             assert_eq(kiosk::has_item(&kiosk, item_id), false);
 
             transfer::public_transfer(item, TEST_ADDRESS2);
-         
+
             ts::return_shared(kiosk);
             ts::return_shared(policy);
         };
 
-        // Withdraw royalty amount from TP
-        next_tx(scenario, TEST_ADDRESS1);
-        {
-            let cap = ts::take_from_sender<TransferPolicyCap<Apparel>>(scenario);
-            let policy = ts::take_shared<TransferPolicy<Apparel>>(scenario);
-            let amount = option::none();
-            option::fill(&mut amount, 20);
-
-            let coin_ = tp::withdraw(&mut policy, &cap, amount, ts::ctx(scenario));
-
-            transfer::public_transfer(coin_, TEST_ADDRESS1);
-        
-            ts::return_to_sender(scenario, cap);
-            ts::return_shared(policy);
-        };   
-
-        // Withdraw from kiosk 
+        // Withdraw from kiosk
         next_tx(scenario, TEST_ADDRESS1);
         {
             let kiosk =  ts::take_shared<Kiosk>(scenario);
@@ -170,8 +135,53 @@ module clothing_marketplace::test_store {
 
             ts::return_shared(kiosk);
             ts::return_to_sender(scenario, cap);
-        };        
+        };
 
-        ts::end(scenario_test);
+        // Test shopping cart and order functionality
+        // Test shopping cart and order functionality
+    next_tx(scenario, TEST_ADDRESS{
+        let username = String::from("customer1");
+        let email = String::from("customer1@example.com");
+        let password = String::from("password1");
+
+        // Create a new customer account with an empty shopping cart
+        let account = new_customer_account(username, email, password, ts::ctx(scenario));
+
+        // Creat    let name = String::from("Jeans");
+        let description = String::from("Denim jeans");
+        let color = String::from("Blue");
+        let price: u64 = 5000;
+        let stock: u64 = 50;
+        let size = String::from("L");
+        let apparel = clothing_marketplace::new_apparel(name, description, price, stock, size, color, ts::ctx(scenario));
+        let apparel_id = object::uid_to_inner(&object::uid_to_bytes(&object::id(&apparel)));
+
+        // Add the apparel item to the shopping cart
+        let cart = object::borrow_mut<ShoppingCart>(&mut account.shopping_cart);
+        add_item_to_cart(cart, apparel_id, 2);
+
+        // Remove one item from the shopping cart
+        remove_item_from_cart(cart, apparel_id, 1);
+
+        // Place an order
+        let order = checkout(&mut account, ts::ctx(scenario));
+
+        // Update the order status
+        let mut order_ref = object::borrow_mut<Order>(&mut order);
+        update_order_status(&mut order_ref, String::from("Shipped"));
+
+        // Verify the order details
+        assert_eq(order_ref.items.get(&apparel_id), Some(&1));
+        assert_eq(order_ref.total_amount, price);
+        assert_eq(order_ref.status, String::from("Shipped"));
+
+        // Verify the shopping cart is reset
+        let cart = object::borrow<ShoppingCart>(&account.shopping_cart);
+        assert_eq(cart.items.is_empty(), true);
+        assert_eq(cart.total_amount, 0);
+
+        transfer::public_transfer(account, TEST_ADDRESS2);
     }
+
+    ts::end(scenario_test);
 }

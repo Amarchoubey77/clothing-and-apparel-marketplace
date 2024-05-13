@@ -1,4 +1,4 @@
-module clothing_marketplace::store {
+module clothing_marketplace::clothing_marketplace {
     use sui::object::{Self, UID};
     use sui::tx_context::{Self, TxContext};
     use sui::kiosk::{Self, Kiosk, KioskOwnerCap};
@@ -8,7 +8,7 @@ module clothing_marketplace::store {
 
     use std::string::{String};
     use std::collections::HashMap;
-    
+
     struct Apparel has key, store {
         id: UID,
         name: String,
@@ -18,7 +18,7 @@ module clothing_marketplace::store {
         size: String,
         color: String,
     }
-    
+
     struct Order has key, store {
         id: UID,
         items: HashMap<UID, u64>, // Map of apparel item IDs to quantities
@@ -31,7 +31,7 @@ module clothing_marketplace::store {
         items: HashMap<UID, u64>, // Map of apparel item IDs to quantities
         total_amount: u64,
     }
-    
+
     struct CustomerAccount has key, store {
         id: UID,
         username: String,
@@ -40,14 +40,14 @@ module clothing_marketplace::store {
         orders: Vec<UID>, // List of order IDs
         shopping_cart: UID, // Shopping cart ID
     }
-    
+
     /// Publisher capability object
     struct ApparelPublisher has key { id: UID, publisher: Publisher }
     struct OrderPublisher has key { id: UID, publisher: Publisher }
     struct ShoppingCartPublisher has key { id: UID, publisher: Publisher }
     struct CustomerAccountPublisher has key { id: UID, publisher: Publisher }
 
-    // one time witness 
+    // one time witness
     struct STORE has drop {}
 
     // Only owner of this module can access it.
@@ -56,13 +56,13 @@ module clothing_marketplace::store {
     }
 
     // =================== Initializer ===================
-    fun init(otw:STORE, ctx: &mut TxContext) {
+    fun init(otw: STORE, ctx: &mut TxContext) {
         // Define publishers
         let apparel_publisher = package::claim<STORE>(otw, ctx);
         let order_publisher = package::claim<STORE>(otw, ctx);
         let shopping_cart_publisher = package::claim<STORE>(otw, ctx);
         let customer_account_publisher = package::claim<STORE>(otw, ctx);
-        
+
         // Share publishers
         transfer::share_object(ApparelPublisher {
             id: object::new(ctx),
@@ -85,25 +85,25 @@ module clothing_marketplace::store {
         transfer::transfer(AdminCap { id: object::new(ctx) }, tx_context::sender(ctx));
     }
 
-    /// Users can create new kiosk for marketplace 
-    public fun new(ctx: &mut TxContext) : KioskOwnerCap {
+    /// Users can create new kiosk for marketplace
+    public fun new(ctx: &mut TxContext): KioskOwnerCap {
         let (kiosk, kiosk_cap) = kiosk::new(ctx);
         // Share the kiosk
         transfer::public_share_object(kiosk);
         kiosk_cap
     }
-    
-    // create any transferpolicy for rules 
-    public fun new_policy(publish: &ApparelPublisher, ctx: &mut TxContext ) {
+
+    // create any transferpolicy for rules
+    public fun new_policy(publish: &ApparelPublisher, ctx: &mut TxContext) {
         // Set the publisher
         let publisher = get_apparel_publisher(publish);
         // Create an transfer_policy and tp_cap
         let (transfer_policy, tp_cap) = tp::new<Apparel>(publisher, ctx);
-        // Transfer the objects 
+        // Transfer the objects
         transfer::public_transfer(tp_cap, tx_context::sender(ctx));
         transfer::public_share_object(transfer_policy);
     }
-    
+
     // Function to add a new apparel item to the store
     public fun new_apparel(name: String, description: String, price: u64, stock: u64, size: String, color: String, ctx: &mut TxContext): Apparel {
         Apparel {
@@ -118,8 +118,8 @@ module clothing_marketplace::store {
     }
 
     // Function to get all apparel items in the store
-    public fun get_apparel(store: &Apparel): &Apparel {
-        store
+    public fun get_apparel(apparel_id: UID): &Apparel {
+        object::borrow<Apparel>(&apparel_id)
     }
 
     // Function to delete an apparel item from the store
@@ -132,29 +132,29 @@ module clothing_marketplace::store {
     public fun update_stock(apparel: &mut Apparel, new_stock: u64) {
         apparel.stock = new_stock;
     }
-    
+
     public fun update_name(apparel: &mut Apparel, name_: String) {
         apparel.name = name_;
     }
-    
+
     public fun update_description(apparel: &mut Apparel, description: String) {
         apparel.description = description;
     }
-    
+
     public fun update_price(apparel: &mut Apparel, price: u64) {
         apparel.price = price;
     }
-    
+
     public fun update_size(apparel: &mut Apparel, size: String) {
         apparel.size = size;
     }
-    
+
     public fun update_color(apparel: &mut Apparel, color: String) {
         apparel.color = color;
     }
 
     // Function to add a new order
-    public fun new_order(items: HashMap<UID, u64>, total_amount: u64, status: String, ctx: &mut TxContext) -> Order {
+    public fun new_order(items: HashMap<UID, u64>, total_amount: u64, status: String, ctx: &mut TxContext): Order {
         Order {
             id: object::new(ctx),
             items,
@@ -164,27 +164,27 @@ module clothing_marketplace::store {
     }
 
     // Function to get an order by ID
-    public fun get_order(order_id: UID) -> Option<Order> {
+    public fun get_order(order_id: UID): Option<Order> {
         object::get(order_id)
     }
 
     // Function to add a new shopping cart
-    public fun new_shopping_cart(items: HashMap<UID, u64>, total_amount: u64, ctx: &mut TxContext) -> ShoppingCart {
+    public fun new_shopping_cart(ctx: &mut TxContext): ShoppingCart {
         ShoppingCart {
             id: object::new(ctx),
-            items,
-            total_amount,
+            items: HashMap::new(),
+            total_amount: 0,
         }
     }
 
     // Function to get a shopping cart by ID
-    public fun get_shopping_cart(cart_id: UID) -> Option<ShoppingCart> {
-        object::get(cart_id)
+    public fun get_shopping_cart(cart_id: UID): &ShoppingCart {
+        object::borrow<ShoppingCart>(&cart_id)
     }
 
     // Function to add a new customer account
-    public fun new_customer_account(username: String, email: String, password: String, ctx: &mut TxContext) -> CustomerAccount {
-        let shopping_cart = new_shopping_cart(HashMap::new(), 0, ctx).id;
+    public fun new_customer_account(username: String, email: String, password: String, ctx: &mut TxContext): CustomerAccount {
+        let shopping_cart = new_shopping_cart(ctx).id;
         CustomerAccount {
             id: object::new(ctx),
             username,
@@ -196,7 +196,7 @@ module clothing_marketplace::store {
     }
 
     // Function to get a customer account by ID
-    public fun get_customer_account(account_id: UID) -> Option<CustomerAccount> {
+    public fun get_customer_account(account_id: UID): Option<CustomerAccount> {
         object::get(account_id)
     }
 
@@ -205,25 +205,78 @@ module clothing_marketplace::store {
         account.orders.push(order_id);
     }
 
+    // =================== Additional Functions ===================
+
+    // Function to add an item to a shopping cart
+    public fun add_item_to_cart(cart: &mut ShoppingCart, apparel_id: UID, quantity: u64) {
+        let entry = cart.items.get_entry(&apparel_id);
+        if (entry.is_some()) {
+            let mut qty = entry.unwrap() {
+        let mut qty = entry.unwrap().1;
+        qty = qty + quantity;
+        cart.items.update(&apparel_id, qty);
+    } else {
+        cart.items.add(&apparel_id, quantity);
+    }
+    cart.total_amount = cart.total_amount + (get_apparel(&apparel_id).price * quantity);
+    }
+
+    // Function to remove an item from a shopping cart
+    public fun remove_item_from_cart(cart: &mut ShoppingCart, apparel_id: UID, quantity: u64) {
+        let entry = cart.items.get_entry(&apparel_id);
+        if (entry.is_some()) {
+            let mut qty = entry.unwrap().1;
+            if (qty >= quantity) {
+                qty = qty - quantity;
+                cart.items.update(&apparel_id, qty);
+                cart.total_amount = cart.total_amount - (get_apparel(&apparel_id).price * quantity);
+            } else {
+                // Quantity to remove is greater than the quantity in the cart
+                // Remove the item from the cart and adjust the total amount
+                cart.items.remove(&apparel_id);
+                cart.total_amount = cart.total_amount - (get_apparel(&apparel_id).price * qty);
+            }
+        } else {
+            // Apparel item not found in the cart
+            // Handle this case by printing an error message or logging
+            print(&format("Apparel item with ID {} not found in the cart.", apparel_id));
+        }
+    }
+
+    // Function to checkout and place an order
+    public fun checkout(account: &mut CustomerAccount, ctx: &mut TxContext): Order {
+        let cart = get_shopping_cart(account.shopping_cart);
+        let order = new_order(cart.items, cart.total_amount, "Pending", ctx);
+        add_order_to_account(account, order.id);
+        // Reset the shopping cart after placing the order
+        account.shopping_cart = new_shopping_cart(ctx).id;
+        order
+    }
+
+    // Function to update the status of an order
+    public fun update_order_status(order: &mut Order, new_status: String) {
+        order.status = new_status;
+    }
+
     // =================== Helper Functions ===================
 
     // Return the apparel publisher
-    fun get_apparel_publisher(shared: &ApparelPublisher) -> &Publisher {
+    fun get_apparel_publisher(shared: &ApparelPublisher): &Publisher {
         &shared.publisher
     }
 
     // Return the order publisher
-    fun get_order_publisher(shared: &OrderPublisher) -> &Publisher {
+    fun get_order_publisher(shared: &OrderPublisher): &Publisher {
         &shared.publisher
     }
 
     // Return the shopping cart publisher
-    fun get_shopping_cart_publisher(shared: &ShoppingCartPublisher) -> &Publisher {
+    fun get_shopping_cart_publisher(shared: &ShoppingCartPublisher): &Publisher {
         &shared.publisher
     }
 
     // Return the customer account publisher
-    fun get_customer_account_publisher(shared: &CustomerAccountPublisher) -> &Publisher {
+    fun get_customer_account_publisher(shared: &CustomerAccountPublisher): &Publisher {
         &shared.publisher
     }
 
